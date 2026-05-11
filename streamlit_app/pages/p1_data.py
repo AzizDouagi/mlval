@@ -32,7 +32,6 @@ def render():
         "📎 Importer un fichier CSV",
         type=['csv'],
         key='csv_upload',
-        max_upload_size=50,
     )
 
     if upload:
