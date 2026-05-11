@@ -31,7 +31,7 @@ def render():
     df_pred = pd.DataFrame({'Réel': y_test.values, 'Prédit': y_pred})
     fig_scatter = px.scatter(
         df_pred, x='Réel', y='Prédit',
-        trendline='ols', opacity=0.6,
+        opacity=0.6,
         labels={'Réel': 'Délai réel (jours)', 'Prédit': 'Délai prédit (jours)'},
         color_discrete_sequence=['#00d4ff']
     )

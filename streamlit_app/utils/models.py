@@ -6,7 +6,8 @@ warnings.filterwarnings('ignore')
 
 import numpy as np
 import pandas as pd
-import joblib, pickle, os
+import joblib, pickle
+from pathlib import Path
 
 from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
@@ -25,7 +26,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 
-MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'models')
+MODELS_DIR = Path(__file__).resolve().parents[2] / 'models'
 
 try:
     from prophet import Prophet
@@ -33,15 +34,13 @@ try:
 except ImportError:
     PROPHET_AVAILABLE = False
 
-try:
-    from sentence_transformers import SentenceTransformer
-    EMBEDDING_AVAILABLE = True
-except ImportError:
-    EMBEDDING_AVAILABLE = False
+# NLP embarqué désactivé par défaut pour éviter les dépendances lourdes
+# (transformers/torchvision) en environnement Streamlit Cloud.
+EMBEDDING_AVAILABLE = False
 
 
 def _ensure_models_dir():
-    os.makedirs(MODELS_DIR, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ─────────────────────────────────────────────
@@ -81,17 +80,20 @@ def train_payment_risk(X_train, X_test, y_train, y_test, groups_train):
     best_model = models[best_name]
 
     _ensure_models_dir()
-    joblib.dump(best_model, os.path.join(MODELS_DIR, 'payment_risk.pkl'))
+    joblib.dump(best_model, MODELS_DIR / 'payment_risk.pkl')
 
     return models, metrics, preds, probas, best_name
 
 
 def predict_risk(X_processed):
-    path = os.path.join(MODELS_DIR, 'payment_risk.pkl')
-    if not os.path.exists(path):
+    path = MODELS_DIR / 'payment_risk.pkl'
+    if not path.exists():
         return None
-    model = joblib.load(path)
-    return model.predict_proba(X_processed)[:, 1]
+    try:
+        model = joblib.load(path)
+        return model.predict_proba(X_processed)[:, 1]
+    except Exception:
+        return None
 
 
 # ─────────────────────────────────────────────
@@ -144,9 +146,9 @@ def compute_rfm_segments(df, customer_col, amount_col, date_col):
     rfm_result = pd.concat(segments, ignore_index=True)
     _ensure_models_dir()
     if last_kmeans is not None:
-        joblib.dump(last_kmeans, os.path.join(MODELS_DIR, 'kmeans_rfm.pkl'))
+        joblib.dump(last_kmeans, MODELS_DIR / 'kmeans_rfm.pkl')
     if last_scaler is not None:
-        joblib.dump(last_scaler, os.path.join(MODELS_DIR, 'rfm_scaler.pkl'))
+        joblib.dump(last_scaler, MODELS_DIR / 'rfm_scaler.pkl')
     return rfm_result
 
 
@@ -175,7 +177,7 @@ def forecast_cashflow(df, tenant_id, amount_col, date_col, periods=180):
         future = m.make_future_dataframe(periods=periods)
         forecast = m.predict(future)
         _ensure_models_dir()
-        with open(os.path.join(MODELS_DIR, 'prophet_model.pkl'), 'wb') as f:
+        with open(MODELS_DIR / 'prophet_model.pkl', 'wb') as f:
             pickle.dump(m, f)
     else:
         x = np.arange(len(cashflow))
@@ -204,17 +206,20 @@ def train_anomaly_detector(X_train_processed, X_test_processed, preprocessor):
     labels = iso.predict(X_test_processed)
     scores = iso.score_samples(X_test_processed)
     _ensure_models_dir()
-    joblib.dump(iso, os.path.join(MODELS_DIR, 'isolation_forest.pkl'))
-    joblib.dump(preprocessor, os.path.join(MODELS_DIR, 'preprocessor.pkl'))
+    joblib.dump(iso, MODELS_DIR / 'isolation_forest.pkl')
+    joblib.dump(preprocessor, MODELS_DIR / 'preprocessor.pkl')
     return iso, labels, scores
 
 
 def predict_anomalies(X_processed):
-    path = os.path.join(MODELS_DIR, 'isolation_forest.pkl')
-    if not os.path.exists(path):
+    path = MODELS_DIR / 'isolation_forest.pkl'
+    if not path.exists():
         return None
-    model = joblib.load(path)
-    return model.predict(X_processed), model.score_samples(X_processed)
+    try:
+        model = joblib.load(path)
+        return model.predict(X_processed), model.score_samples(X_processed)
+    except Exception:
+        return None
 
 
 # ─────────────────────────────────────────────
@@ -261,7 +266,7 @@ def train_delay_regression(df, train_idx, test_idx):
         'MAE': mean_absolute_error(y_test, y_pred)
     }
     _ensure_models_dir()
-    joblib.dump(pipeline, os.path.join(MODELS_DIR, 'delay_regression.pkl'))
+    joblib.dump(pipeline, MODELS_DIR / 'delay_regression.pkl')
     return pipeline, metrics, (y_test, y_pred)
 
 
@@ -288,14 +293,14 @@ def train_nlp_categorization(df, train_idx, test_idx):
     y_nlp = df['categorie_produit'].astype(str).fillna('unknown')
 
     if EMBEDDING_AVAILABLE:
-        emb_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-        X_nlp = emb_model.encode(df['nlp_input'].tolist(), show_progress_bar=False)
         mode = 'sentence-transformers'
+        raise RuntimeError('Mode sentence-transformers désactivé dans cette configuration.')
     else:
+        _ensure_models_dir()
         tfidf = TfidfVectorizer(max_features=3000, ngram_range=(1, 2), stop_words='english')
         X_nlp = tfidf.fit_transform(df['nlp_input']).toarray()
         mode = 'tfidf'
-        joblib.dump(tfidf, os.path.join(MODELS_DIR, 'tfidf_vectorizer.pkl'))
+        joblib.dump(tfidf, MODELS_DIR / 'tfidf_vectorizer.pkl')
 
     X_train = X_nlp[train_idx]
     X_test = X_nlp[test_idx]
@@ -310,23 +315,22 @@ def train_nlp_categorization(df, train_idx, test_idx):
     acc = accuracy_score(y_test, y_pred)
 
     _ensure_models_dir()
-    joblib.dump(clf, os.path.join(MODELS_DIR, 'nlp_categories.pkl'))
+    joblib.dump(clf, MODELS_DIR / 'nlp_categories.pkl')
     return clf, mode, acc, report
 
 
 def predict_nlp_category(text: str) -> str:
-    clf_path = os.path.join(MODELS_DIR, 'nlp_categories.pkl')
-    tfidf_path = os.path.join(MODELS_DIR, 'tfidf_vectorizer.pkl')
-    if not os.path.exists(clf_path):
+    clf_path = MODELS_DIR / 'nlp_categories.pkl'
+    tfidf_path = MODELS_DIR / 'tfidf_vectorizer.pkl'
+    if not clf_path.exists():
         return 'Modèle non entraîné'
-    clf = joblib.load(clf_path)
-    if os.path.exists(tfidf_path):
-        tfidf = joblib.load(tfidf_path)
-        X = tfidf.transform([text]).toarray()
-    else:
-        if EMBEDDING_AVAILABLE:
-            emb = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-            X = emb.encode([text])
+    try:
+        clf = joblib.load(clf_path)
+        if tfidf_path.exists():
+            tfidf = joblib.load(tfidf_path)
+            X = tfidf.transform([text]).toarray()
         else:
             return 'Vectoriseur non disponible'
-    return clf.predict(X)[0]
+        return clf.predict(X)[0]
+    except Exception as e:
+        return f'Erreur chargement modèle NLP: {e}'

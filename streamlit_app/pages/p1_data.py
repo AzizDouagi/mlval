@@ -4,9 +4,11 @@ Page 1 — Chargement des données & entraînement de tous les modèles.
 import streamlit as st
 import pandas as pd
 import numpy as np
-import sys, os
+import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+BASE_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils.preprocessing import build_tenant_id, feature_engineering, build_feature_matrix, build_preprocessor
 from utils.models import (
     train_payment_risk, compute_rfm_segments, train_anomaly_detector,
@@ -24,13 +26,13 @@ def render():
     )
 
     # ── Upload ────────────────────────────────────────────────────────────────
-    default_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'invoices_ml (1).csv')
+    default_path = BASE_DIR / 'data' / 'invoices_ml (1).csv'
     upload = st.file_uploader("📎 Importer un fichier CSV", type=['csv'])
 
     if upload:
         df_raw = pd.read_csv(upload, encoding='utf-8')
         st.success(f"✅ Fichier chargé : {df_raw.shape[0]:,} lignes × {df_raw.shape[1]} colonnes")
-    elif os.path.exists(default_path):
+    elif default_path.exists():
         df_raw = pd.read_csv(default_path, encoding='utf-8')
         st.info(f"📂 Fichier local détecté : `data/invoices_ml (1).csv` — {df_raw.shape[0]:,} lignes")
     else:
