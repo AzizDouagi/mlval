@@ -1,6 +1,7 @@
 """
 Page 1 — Chargement des données & entraînement de tous les modèles.
 """
+import io
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -27,13 +28,26 @@ def render():
 
     # ── Upload ────────────────────────────────────────────────────────────────
     default_path = BASE_DIR / 'data' / 'invoices_ml (1).csv'
-    upload = st.file_uploader("📎 Importer un fichier CSV", type=['csv'])
+    upload = st.file_uploader(
+        "📎 Importer un fichier CSV",
+        type=['csv'],
+        key='csv_upload',
+        max_upload_size=50,
+    )
 
     if upload:
-        df_raw = pd.read_csv(upload, encoding='utf-8')
-        st.success(f"✅ Fichier chargé : {df_raw.shape[0]:,} lignes × {df_raw.shape[1]} colonnes")
+        try:
+            upload_bytes = upload.getvalue()
+            try:
+                df_raw = pd.read_csv(io.BytesIO(upload_bytes), encoding='utf-8-sig')
+            except UnicodeDecodeError:
+                df_raw = pd.read_csv(io.BytesIO(upload_bytes), encoding='latin1')
+            st.success(f"✅ Fichier chargé : {df_raw.shape[0]:,} lignes × {df_raw.shape[1]} colonnes")
+        except Exception as e:
+            st.error(f"❌ Le fichier CSV envoyé n'a pas pu être lu : {e}")
+            st.stop()
     elif default_path.exists():
-        df_raw = pd.read_csv(default_path, encoding='utf-8')
+        df_raw = pd.read_csv(default_path, encoding='utf-8-sig')
         st.info(f"📂 Fichier local détecté : `data/invoices_ml (1).csv` — {df_raw.shape[0]:,} lignes")
     else:
         st.warning("⚠️ Aucun fichier CSV disponible. Importez votre fichier ci-dessus.")
